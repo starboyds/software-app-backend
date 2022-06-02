@@ -102,16 +102,21 @@ app.post('/api/create-review', async (req, res) => {
 // search API *************************
 
 app.post('/api/search', async(req, res) => {
-    const {searchText, platfrom, } = req.body;
-    let q = {name: searchText};
-    if(platfrom) {
-        q.platfrom = platform;
-    }
-    if(sort) {
-        const softwares = await Product.find(q).sort();
-    } else {
-        const softwares = await Product.find(q);
-    }
+    const {searchText, startPrice, endPrice, license } = req.body;
+
+    let softwares;
+    console.log(startPrice, endPrice)
+    if(startPrice && endPrice > 0 && (!license || license == "")) {
+        softwares = await Product.find({ $and: [{name: { '$regex' : searchText, '$options' : 'i' } }, { price: {$gte: startPrice, $lte: endPrice}} ] });
+        return res.send(softwares);
+    } 
+
+    if(startPrice && endPrice > 0 && license && license != "") {
+        softwares = await Product.find({ $and: [{name: { '$regex' : searchText, '$options' : 'i' } }, { price: {$gte: startPrice, $lte: endPrice}}, { license: license} ] });
+        return res.send(softwares);
+    } 
+
+    softwares = await Product.find({ name: { '$regex' : searchText, '$options' : 'i' } });
    
     res.send(softwares)
 })
