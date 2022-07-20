@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser')
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const PORT = process.env.PORT || 3001
 
 // ************************** Models *******************************
@@ -14,7 +15,7 @@ const Collection = require('./models/collection');
 const Review = require('./models/review');
 
 // ***************** Database Connection Setup ***************************
-mongoose.connect("mongodb://localhost:27017/softwareDb", {useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect("mongodb+srv://starboyds:naruto27@cluster0.m7gdh.mongodb.net/softwareDb?retryWrites=true&w=majority", {useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("MONGO CONNECTION OPEN!!");
   })
@@ -27,7 +28,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(cors())
 
-// **************** Routes **********************************
+
+
+// **************** Middlewares **********************************
+
+function authMiddleware(req, res, next) {
+
+    var token = req.headers['x-access-token'];
+    if (!token) {
+        console.log({message: 'No token provided.' })
+    }
+    
+    jwt.verify(token, 'secret', function(err, decoded) {
+      if (err) {
+        console.log({message: 'Failed to authenticate token.'})
+      }
+      
+      next()
+    }); 
+}
+
+
+// middleware ends ------------------------------------
+
+
+
 
 
 // software routes **************
@@ -50,7 +75,13 @@ app.post('/api/register', async(req, res) => {
     user.password = await bcrypt.hash(user.password, salt);
 
     await user.save();
-    res.send({email: user.email, username: user.username, id: user._id})
+
+    let token = jwt.sign({
+        data: {email: user.email, username: user.username, id: user._id}
+      }, 'secret', { expiresIn: '24h' });
+
+    res.send({email: user.email, username: user.username, id: user._id, token: token})
+    
 })
 
 app.post('/api/login', async(req, res) => {
@@ -65,23 +96,28 @@ app.post('/api/login', async(req, res) => {
         res.send({error: 'User or password does not matched!'})
         return;
     }
-    res.send({email: user.email, username: user.username, id: user._id});
+
+    let token = jwt.sign({
+        data: {email: user.email, username: user.username, id: user._id}
+      }, 'secret', { expiresIn: '24h' });
+
+    res.send({email: user.email, username: user.username, id: user._id, token: token});
 })
 
 // collection routes **************
-app.post('/api/collection/create', async(req, res) => {
+app.post('/api/collection/create', authMiddleware, async(req, res) => {
     const newCollection = new Collection(req.body);
     await newCollection.save()
     res.send({collection: newCollection})
 })
 
-app.get('/api/collection/:id', async(req, res) => {
-    const collections = await Collection.find({userId: req.params.id});
+app.get('/api/collection/:id', authMiddleware, async(req, res) => {
+    const collections = await Collection.find({userId: req.params.id}).populate('user', {'email':1, 'username': 1}).populate('product');
     res.send({collections: collections})
 })
 
-app.delete('/api/collection/:id', async(req, res) => {
-    const removedItem = await Collection.deleteOne({softwareId: req.params.id});
+app.delete('/api/collection/:id', authMiddleware, async(req, res) => {
+    await Collection.deleteOne({softwareId: req.params.id});
     res.send({msg: 'deleted'})
 })
 
@@ -105,7 +141,7 @@ app.post('/api/search', async(req, res) => {
     const {searchText, startPrice, endPrice, license } = req.body;
 
     let softwares;
-    console.log(startPrice, endPrice)
+    // console.log(startPrice, endPrice)
     if(startPrice && endPrice > 0 && (!license || license == "")) {
         softwares = await Product.find({ $and: [{name: { '$regex' : searchText, '$options' : 'i' } }, { price: {$gte: startPrice, $lte: endPrice}} ] });
         return res.send(softwares);
